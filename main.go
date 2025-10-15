@@ -22,7 +22,7 @@ func main() {
 	}
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		resp.Header.Del("X-Frame-Options")
-		resp.Header.Del("Content-Security-Policy")
+		resp.Header.Set("Content-Security-Policy", "frame-ancestors *;")
 		resp.Header.Set("Access-Control-Allow-Origin", "*")
 		return nil
 	}
