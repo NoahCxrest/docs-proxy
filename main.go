@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 )
 
 func main() {
@@ -22,7 +23,10 @@ func main() {
 	}
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		resp.Header.Del("X-Frame-Options")
-		resp.Header.Set("Content-Security-Policy", "frame-ancestors *;")
+		if csp := resp.Header.Get("Content-Security-Policy"); csp != "" {
+			newCSP := strings.ReplaceAll(csp, "frame-ancestors 'none'", "frame-ancestors *")
+			resp.Header.Set("Content-Security-Policy", newCSP)
+		}
 		resp.Header.Set("Access-Control-Allow-Origin", "*")
 		return nil
 	}
