@@ -1,35 +1,45 @@
 package main
 
 import (
+	"io"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"strings"
 )
 
 func main() {
-	target, _ := url.Parse("https://docs.melonly.xyz")
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.Director = func(req *http.Request) {
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-		req.Header.Set("Accept-Language", "en-US,en;q=0.5")
-		req.Header.Set("Accept-Encoding", "gzip, deflate")
-		req.Header.Set("Connection", "keep-alive")
-		req.Header.Set("Upgrade-Insecure-Requests", "1")
-		req.Host = target.Host
-		req.URL.Scheme = target.Scheme
-		req.URL.Host = target.Host
-	}
-	proxy.ModifyResponse = func(resp *http.Response) error {
-		resp.Header.Del("X-Frame-Options")
-		if csp := resp.Header.Get("Content-Security-Policy"); csp != "" {
-			newCSP := strings.ReplaceAll(csp, "frame-ancestors 'none';", "frame-ancestors *;")
-			resp.Header.Set("Content-Security-Policy", newCSP)
+	target := "https://docs.melonly.xyz"
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		url := target + r.URL.Path
+		if r.URL.RawQuery != "" {
+			url += "?" + r.URL.RawQuery
 		}
-		resp.Header.Set("Access-Control-Allow-Origin", "*")
-		return nil
-	}
-	http.Handle("/", proxy)
+		resp, err := http.Get(url)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		defer resp.Body.Close()
+		for k, v := range resp.Header {
+			if k == "Content-Security-Policy" {
+				newV := make([]string, len(v))
+				for i, val := range v {
+					newV[i] = strings.ReplaceAll(val, "frame-ancestors 'none';", "frame-ancestors *;")
+				}
+				w.Header()[k] = newV
+			} else if k != "X-Frame-Options" {
+				w.Header()[k] = v
+			}
+		}
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(resp.StatusCode)
+		if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+			body, _ := io.ReadAll(resp.Body)
+			bodyStr := string(body)
+			bodyStr = strings.ReplaceAll(bodyStr, `<meta http-equiv="Content-Security-Policy"`, "")
+			io.WriteString(w, bodyStr)
+		} else {
+			io.Copy(w, resp.Body)
+		}
+	})
 	http.ListenAndServe(":8080", nil)
 }
